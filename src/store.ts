@@ -16,6 +16,9 @@ interface Store extends AppState {
   newMixLocked: boolean;
   // Country totals for weighted calculations (from CSV)
   countryTotals: Record<RegionKey, number>;
+  // Version tracking
+  activeVersionId: string | null;
+  hasUnsavedChanges: boolean;
   // Actions
   setCurrentMix: (mix: RegionMix) => void;
   setCurrentMixWithTotals: (mix: RegionMix, totals: Record<RegionKey, number>) => void;
@@ -36,6 +39,7 @@ interface Store extends AppState {
   saveVersion: (name: string, id?: string) => void;
   loadVersion: (id: string) => void;
   deleteVersion: (id: string) => void;
+  checkForUnsavedChanges: () => void;
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -212,6 +216,93 @@ const saveVersions = (versions: SavedVersion[]) => {
   }
 };
 
+// Helper function to compare numeric values between current state and saved version
+// Only compares numeric fields: mixes, fitBySegment, currentAttachRate, backbookMultiplier
+const hasNumericChanges = (current: Store, saved: SavedVersion | null): boolean => {
+  if (!saved || !saved.state) return false;
+  
+  // Compare currentMix (numeric values only)
+  for (const region of REGION_KEYS) {
+    const currentRegion = current.currentMix[region];
+    const savedRegion = saved.state.currentMix?.[region];
+    if (!savedRegion) {
+      // If saved version doesn't have this region, consider it changed
+      if (currentRegion && (currentRegion.casual !== 0 || currentRegion.upscaleCasual !== 0 || 
+          currentRegion.fineDining !== 0 || currentRegion.bar !== 0 || currentRegion.quickServe !== 0)) {
+        return true;
+      }
+      continue;
+    }
+    if (currentRegion.casual !== savedRegion.casual ||
+        currentRegion.upscaleCasual !== savedRegion.upscaleCasual ||
+        currentRegion.fineDining !== savedRegion.fineDining ||
+        currentRegion.bar !== savedRegion.bar ||
+        currentRegion.quickServe !== savedRegion.quickServe) {
+      return true;
+    }
+  }
+  
+  // Compare newMix (numeric values only)
+  for (const region of REGION_KEYS) {
+    const currentRegion = current.newMix[region];
+    const savedRegion = saved.state.newMix?.[region];
+    if (!savedRegion) {
+      if (currentRegion && (currentRegion.casual !== 0 || currentRegion.upscaleCasual !== 0 || 
+          currentRegion.fineDining !== 0 || currentRegion.bar !== 0 || currentRegion.quickServe !== 0)) {
+        return true;
+      }
+      continue;
+    }
+    if (currentRegion.casual !== savedRegion.casual ||
+        currentRegion.upscaleCasual !== savedRegion.upscaleCasual ||
+        currentRegion.fineDining !== savedRegion.fineDining ||
+        currentRegion.bar !== savedRegion.bar ||
+        currentRegion.quickServe !== savedRegion.quickServe) {
+      return true;
+    }
+  }
+  
+  // Compare products (fitBySegment, currentAttachRate, backbookMultiplier only)
+  if (current.products.length !== (saved.state.products?.length || 0)) {
+    return true;
+  }
+  
+  for (let i = 0; i < current.products.length; i++) {
+    const currentProduct = current.products[i];
+    const savedProduct = saved.state.products?.[i];
+    if (!savedProduct || currentProduct.id !== savedProduct.id) {
+      return true;
+    }
+    
+    // Compare fitBySegment
+    const currentFit = currentProduct.fitBySegment;
+    const savedFit = savedProduct.fitBySegment;
+    if (currentFit.casual !== (savedFit?.casual ?? 0) ||
+        currentFit.upscaleCasual !== (savedFit?.upscaleCasual ?? 0) ||
+        currentFit.fineDining !== (savedFit?.fineDining ?? 0) ||
+        currentFit.bar !== (savedFit?.bar ?? 0) ||
+        currentFit.quickServe !== (savedFit?.quickServe ?? 0)) {
+      return true;
+    }
+    
+    // Compare currentAttachRate
+    const currentAttach = currentProduct.currentAttachRate ?? undefined;
+    const savedAttach = savedProduct.currentAttachRate ?? undefined;
+    if (currentAttach !== savedAttach) {
+      return true;
+    }
+    
+    // Compare backbookMultiplier
+    const currentBackbook = currentProduct.backbookMultiplier ?? undefined;
+    const savedBackbook = savedProduct.backbookMultiplier ?? undefined;
+    if (currentBackbook !== savedBackbook) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
 export const useStore = create<Store>()(
   persist(
     (set) => (    {
@@ -222,6 +313,8 @@ export const useStore = create<Store>()(
       currentMixLocked: false,
       newMixLocked: false,
       countryTotals: {} as Record<RegionKey, number>,
+      activeVersionId: null,
+      hasUnsavedChanges: false,
 
       setCurrentMix: (mix: RegionMix) => set({ currentMix: mix }),
       setCurrentMixWithTotals: (mix: RegionMix, totals: Record<RegionKey, number>) => set({ 
@@ -230,26 +323,46 @@ export const useStore = create<Store>()(
         currentMixLocked: true, // Automatically lock when CSV data is loaded
       }),
       updateCurrentMixSegment: (region: RegionKey, segment: SegmentKey, value: number) =>
-        set((state: Store) => ({
-          currentMix: {
-            ...state.currentMix,
-            [region]: {
-              ...state.currentMix[region],
-              [segment]: value,
+        set((state: Store) => {
+          const newState = {
+            currentMix: {
+              ...state.currentMix,
+              [region]: {
+                ...state.currentMix[region],
+                [segment]: value,
+              },
             },
-          },
-        })),
+          };
+          // Check for unsaved changes after update
+          if (state.activeVersionId) {
+            const versions = loadVersions();
+            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
+            return { ...newState, hasUnsavedChanges: hasChanges };
+          }
+          return newState;
+        }),
       setNewMix: (mix: RegionMix) => set({ newMix: mix }),
       updateNewMixSegment: (region: RegionKey, segment: SegmentKey, value: number) =>
-        set((state: Store) => ({
-          newMix: {
-            ...state.newMix,
-            [region]: {
-              ...state.newMix[region],
-              [segment]: value,
+        set((state: Store) => {
+          const newState = {
+            newMix: {
+              ...state.newMix,
+              [region]: {
+                ...state.newMix[region],
+                [segment]: value,
+              },
             },
-          },
-        })),
+          };
+          // Check for unsaved changes after update
+          if (state.activeVersionId) {
+            const versions = loadVersions();
+            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
+            return { ...newState, hasUnsavedChanges: hasChanges };
+          }
+          return newState;
+        }),
       toggleCurrentMixLock: () =>
         set((state: Store) => {
           // If countryTotals exist, Current Mix should stay locked (CSV format is permanent)
@@ -267,32 +380,74 @@ export const useStore = create<Store>()(
           return { newMixLocked: !state.newMixLocked };
         }),
       addProduct: (product: Omit<Product, 'id'>) =>
-        set((state: Store) => ({
-          products: [
-            ...state.products,
-            { ...product, id: generateId() },
-          ],
-        })),
-      updateProduct: (id: string, updates: Partial<Product>) =>
-        set((state: Store) => ({
-          products: state.products.map((p: Product) =>
-            p.id === id ? { ...p, ...updates } : p
-          ),
-        })),
-      deleteProduct: (id: string) =>
-        set((state: Store) => ({
-          products: state.products.filter((p: Product) => p.id !== id),
-        })),
-      duplicateProduct: (id: string) =>
         set((state: Store) => {
-          const product = state.products.find((p: Product) => p.id === id);
-          if (!product) return state;
-          return {
+          const newState = {
             products: [
               ...state.products,
               { ...product, id: generateId() },
             ],
           };
+          // Check for unsaved changes after adding product
+          if (state.activeVersionId) {
+            const versions = loadVersions();
+            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
+            return { ...newState, hasUnsavedChanges: hasChanges };
+          }
+          return newState;
+        }),
+      updateProduct: (id: string, updates: Partial<Product>) =>
+        set((state: Store) => {
+          const newState = {
+            products: state.products.map((p: Product) =>
+              p.id === id ? { ...p, ...updates } : p
+            ),
+          };
+          // Check for unsaved changes if numeric fields were updated
+          if (state.activeVersionId && (
+            updates.fitBySegment !== undefined ||
+            updates.currentAttachRate !== undefined ||
+            updates.backbookMultiplier !== undefined
+          )) {
+            const versions = loadVersions();
+            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
+            return { ...newState, hasUnsavedChanges: hasChanges };
+          }
+          return newState;
+        }),
+      deleteProduct: (id: string) =>
+        set((state: Store) => {
+          const newState = {
+            products: state.products.filter((p: Product) => p.id !== id),
+          };
+          // Check for unsaved changes after deleting product
+          if (state.activeVersionId) {
+            const versions = loadVersions();
+            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
+            return { ...newState, hasUnsavedChanges: hasChanges };
+          }
+          return newState;
+        }),
+      duplicateProduct: (id: string) =>
+        set((state: Store) => {
+          const product = state.products.find((p: Product) => p.id === id);
+          if (!product) return state;
+          const newState = {
+            products: [
+              ...state.products,
+              { ...product, id: generateId() },
+            ],
+          };
+          // Check for unsaved changes after duplicating product
+          if (state.activeVersionId) {
+            const versions = loadVersions();
+            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
+            return { ...newState, hasUnsavedChanges: hasChanges };
+          }
+          return newState;
         }),
       reorderProducts: (activeId: string, overId: string) =>
         set((state: Store) => {
@@ -343,6 +498,8 @@ export const useStore = create<Store>()(
             currentMix: resetCurrentMix,
             newMix: resetNewMix,
             products: resetProducts,
+            activeVersionId: null, // Clear active version when resetting
+            hasUnsavedChanges: false, // Clear unsaved changes flag
           };
         }),
       importState: (state: AppState) => set(state),
@@ -388,7 +545,10 @@ export const useStore = create<Store>()(
           }
           
           saveVersions(updatedVersions);
-          return { savedVersions: updatedVersions };
+          return { 
+            savedVersions: updatedVersions,
+            hasUnsavedChanges: false, // Clear unsaved changes flag when saving
+          };
         });
       },
       
@@ -409,12 +569,14 @@ export const useStore = create<Store>()(
               bar: 0,
               quickServe: 0,
             },
-        // Handle migration from old field names
-        percentWhoWantIt: p.percentWhoWantIt ?? (p as any).percentWhoWillPay,
-        percentWhoCanUseIt: p.percentWhoCanUseIt ?? (p as any).percentWhoWillUse,
-        complexity: p.complexity,
-        currentAttachRate: p.currentAttachRate,
-        marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
+            // Handle migration from old field names
+            percentWhoWantIt: p.percentWhoWantIt ?? (p as any).percentWhoWillPay,
+            percentWhoCanUseIt: p.percentWhoCanUseIt ?? (p as any).percentWhoWillUse,
+            complexity: p.complexity,
+            currentAttachRate: p.currentAttachRate,
+            backbookMultiplier: p.backbookMultiplier,
+            marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
+            competitors: p.competitors ? { ...p.competitors } : undefined,
           }));
           
           set({
@@ -422,6 +584,8 @@ export const useStore = create<Store>()(
             newMix: version.state.newMix || DEFAULT_NEW_MIX,
             products: productsToLoad,
             savedVersions: versions, // Keep versions in sync
+            activeVersionId: id, // Set active version ID
+            hasUnsavedChanges: false, // Clear unsaved changes flag when loading
           });
         }
       },
@@ -430,7 +594,21 @@ export const useStore = create<Store>()(
         set((state: Store) => {
           const updatedVersions = state.savedVersions.filter((v: SavedVersion) => v.id !== id);
           saveVersions(updatedVersions);
-          return { savedVersions: updatedVersions };
+          // Clear active version if it was deleted
+          const clearActive = state.activeVersionId === id ? { activeVersionId: null, hasUnsavedChanges: false } : {};
+          return { savedVersions: updatedVersions, ...clearActive };
+        });
+      },
+      
+      checkForUnsavedChanges: () => {
+        set((state: Store) => {
+          if (!state.activeVersionId) {
+            return { hasUnsavedChanges: false };
+          }
+          const versions = loadVersions();
+          const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+          const hasChanges = hasNumericChanges(state, activeVersion || null);
+          return { hasUnsavedChanges: hasChanges };
         });
       },
     }),
@@ -450,6 +628,8 @@ export const useStore = create<Store>()(
             newMix: DEFAULT_NEW_MIX,
             products: createInitialProducts(),
             countryTotals: {} as Record<RegionKey, number>,
+            activeVersionId: null,
+            hasUnsavedChanges: false,
           };
         }
         
@@ -483,6 +663,7 @@ export const useStore = create<Store>()(
                 percentWhoCanUseIt: p.percentWhoCanUseIt ?? p.percentWhoWillUse,
                 complexity: p.complexity,
                 currentAttachRate: p.currentAttachRate,
+                backbookMultiplier: p.backbookMultiplier,
                 marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
                 competitors: p.competitors || undefined,
               }));
@@ -491,6 +672,8 @@ export const useStore = create<Store>()(
                 ...migrated,
                 products: validatedProducts.length > 0 ? validatedProducts : (migrated.products || createInitialProducts()),
                 countryTotals: state.countryTotals || ({} as Record<RegionKey, number>),
+                activeVersionId: state.activeVersionId ?? null,
+                hasUnsavedChanges: state.hasUnsavedChanges ?? false,
               };
             }
           } else if (state.currentMix && !state.currentMix.belgium) {
@@ -522,6 +705,8 @@ export const useStore = create<Store>()(
               newMix: DEFAULT_NEW_MIX,
               products: validatedProducts.length > 0 ? validatedProducts : createInitialProducts(),
               countryTotals: state.countryTotals || ({} as Record<RegionKey, number>),
+              activeVersionId: null,
+              hasUnsavedChanges: false,
             };
           } else if (state.currentMix && state.currentMix.belgium) {
             // If countryTotals exist, preserve the currentMix (it's from CSV and should be permanent)
@@ -566,6 +751,7 @@ export const useStore = create<Store>()(
                   percentWhoCanUseIt: p.percentWhoCanUseIt ?? p.percentWhoWillUse,
                   complexity: p.complexity,
                   currentAttachRate: p.currentAttachRate,
+                  backbookMultiplier: p.backbookMultiplier,
                   marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
                   competitors: p.competitors || undefined,
                 }));
@@ -579,6 +765,8 @@ export const useStore = create<Store>()(
                   currentMixLocked: hasCountryTotals || (state.currentMixLocked ?? false),
                   newMixLocked: state.newMixLocked ?? false,
                   countryTotals: state.countryTotals || ({} as Record<RegionKey, number>),
+                  activeVersionId: state.activeVersionId ?? null,
+                  hasUnsavedChanges: state.hasUnsavedChanges ?? false,
                 };
               }
             }
@@ -627,8 +815,19 @@ export const useStore = create<Store>()(
               newMixLocked: state.newMixLocked ?? false,
               products: validatedProducts.length > 0 ? validatedProducts : (state.products || createInitialProducts()),
               countryTotals: state.countryTotals || ({} as Record<RegionKey, number>),
+              activeVersionId: state.activeVersionId ?? null,
+              hasUnsavedChanges: state.hasUnsavedChanges ?? false,
             };
           }
+        }
+        
+        // Ensure activeVersionId and hasUnsavedChanges are initialized
+        if (state && (state.activeVersionId === undefined || state.hasUnsavedChanges === undefined)) {
+          return {
+            ...state,
+            activeVersionId: state.activeVersionId ?? null,
+            hasUnsavedChanges: state.hasUnsavedChanges ?? false,
+          };
         }
         
         return state;

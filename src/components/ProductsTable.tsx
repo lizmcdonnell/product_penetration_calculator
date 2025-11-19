@@ -33,6 +33,8 @@ interface ProductsTableProps {
   savedVersions: Array<{ id: string; name: string; timestamp: number }>;
   onLoadVersion: (id: string) => void;
   onDeleteVersion: (id: string) => void;
+  activeVersionId: string | null;
+  hasUnsavedChanges: boolean;
 }
 
 interface EditingCell {
@@ -60,6 +62,25 @@ const TrashIcon = () => (
   </svg>
 );
 const DragHandleIcon = () => <span className="text-xs text-gray-400 cursor-grab active:cursor-grabbing">⋮⋮</span>;
+
+// Alert icon component for unsaved changes
+const AlertIcon = () => (
+  <svg
+    width="14"
+    height="14"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: 'block', color: '#dc2626' }}
+  >
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="12" y1="8" x2="12" y2="12"></line>
+    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+  </svg>
+);
 
 const ChevronUpIcon = () => (
   <svg style={{ width: '8px', height: '8px', marginLeft: '4px', color: '#2563eb', display: 'inline-block', verticalAlign: 'middle' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -386,6 +407,8 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
   savedVersions,
   onLoadVersion,
   onDeleteVersion,
+  activeVersionId,
+  hasUnsavedChanges,
 }) => {
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [versionName, setVersionName] = useState("");
@@ -871,6 +894,9 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
           <button
             onClick={handleSaveClick}
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
               padding: '6px 16px',
               height: '36px',
               borderRadius: '6px',
@@ -887,6 +913,11 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
             aria-label="Save current state"
           >
             Save
+            {activeVersionId && hasUnsavedChanges && (
+              <span style={{ display: 'flex', alignItems: 'center' }}>
+                <AlertIcon />
+              </span>
+            )}
           </button>
           {savedVersions.length > 0 && (
             <button
@@ -1139,41 +1170,64 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
         {/* Saved Versions */}
         {savedVersions.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-            {savedVersions.map((version) => (
-              <div
-                key={version.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '2px',
-                  borderRadius: '6px',
-                  border: '1px solid #e5e7eb',
-                  backgroundColor: 'white',
-                  transition: 'background-color 0.2s'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'white'}
-              >
-                <button
-                  onClick={() => onLoadVersion(version.id)}
+            {savedVersions.map((version) => {
+              const isActive = activeVersionId === version.id;
+              
+              return (
+                <div
+                  key={version.id}
                   style={{
-                    padding: '4px 10px',
-                    height: '32px',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    color: '#374151',
-                    fontSize: '13px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    borderRadius: '4px'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px',
+                    borderRadius: '6px',
+                    border: isActive ? '1px solid #2563eb' : '1px solid #e5e7eb',
+                    backgroundColor: isActive ? '#eff6ff' : 'white',
+                    transition: 'background-color 0.2s, border-color 0.2s'
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9fafb'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  aria-label={`Load version: ${version.name}`}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = '#f3f4f6';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = 'white';
+                    }
+                  }}
                 >
-                  {version.name}
-                </button>
+                  <button
+                    onClick={() => onLoadVersion(version.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      height: '32px',
+                      border: 'none',
+                      backgroundColor: isActive ? '#3b82f6' : 'transparent',
+                      color: isActive ? '#ffffff' : '#374151',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      transition: 'background-color 0.2s, color 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.backgroundColor = '#f9fafb';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }
+                    }}
+                    aria-label={`Load version: ${version.name}`}
+                  >
+                    {version.name}
+                  </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1210,7 +1264,8 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
                   ×
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

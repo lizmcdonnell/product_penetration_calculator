@@ -14,6 +14,8 @@ function App() {
     currentMixLocked,
     newMixLocked,
     countryTotals,
+    activeVersionId,
+    hasUnsavedChanges,
     updateCurrentMixSegment,
     updateNewMixSegment,
     setCurrentMixWithTotals,
@@ -155,6 +157,8 @@ function App() {
           savedVersions={savedVersions}
           onLoadVersion={loadVersion}
           onDeleteVersion={deleteVersion}
+          activeVersionId={activeVersionId}
+          hasUnsavedChanges={hasUnsavedChanges}
         />
       </main>
     </div>
