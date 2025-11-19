@@ -18,9 +18,11 @@ export const supabase = supabaseUrl && supabaseAnonKey
 if (supabase) {
   console.log('✅ Supabase connected:', supabaseUrl);
   // Test connection on load
-  supabase
-    .from('versions')
-    .select('count', { count: 'exact', head: true })
+  Promise.resolve(
+    supabase
+      .from('versions')
+      .select('count', { count: 'exact', head: true })
+  )
     .then(({ error }) => {
       if (error) {
         console.error('❌ Supabase connection test failed:', error);
@@ -33,7 +35,7 @@ if (supabase) {
         console.log('✅ Supabase connection test passed - table is accessible');
       }
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       console.error('❌ Supabase connection test error:', err);
     });
 } else {
