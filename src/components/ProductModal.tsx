@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { RichTextEditor } from './RichTextEditor';
 import { PercentInput } from './PercentInput';
 import type { Product, ComplexityLevel, SegmentMix, RegionKey } from '../types';
-import { SEGMENT_LABELS, SEGMENT_KEYS, REGION_LABELS, REGION_KEYS } from '../types';
+import { SEGMENT_LABELS, SEGMENT_KEYS, REGION_KEYS } from '../types';
 
 interface ProductModalProps {
   product: Product | null;
