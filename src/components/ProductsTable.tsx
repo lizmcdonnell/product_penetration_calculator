@@ -1341,7 +1341,7 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
           setIsModalOpen(false);
           setSelectedProduct(null);
         }}
-        onSave={(id, name, notes, fitBySegment, complexity, currentAttachRate, backbookMultiplier, marketRelevance, competitors) => {
+        onSave={(id, name, notes, fitBySegment, complexity, currentAttachRate, backbookMultiplier, marketRelevance) => {
           onChangeProduct(id, {
             name,
             notes,
@@ -1350,7 +1350,6 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
             currentAttachRate,
             backbookMultiplier,
             marketRelevance,
-            competitors,
           });
           setIsModalOpen(false);
           setSelectedProduct(null);

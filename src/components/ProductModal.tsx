@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { RichTextEditor } from './RichTextEditor';
 import { PercentInput } from './PercentInput';
-import { PRODUCT_COMPETITORS } from '../data/competitors';
-import type { Product, ComplexityLevel, CompetitorsByRegion, SegmentMix, RegionKey } from '../types';
+import type { Product, ComplexityLevel, SegmentMix, RegionKey } from '../types';
 import { SEGMENT_LABELS, SEGMENT_KEYS, REGION_LABELS, REGION_KEYS } from '../types';
 
 interface ProductModalProps {
@@ -18,8 +17,7 @@ interface ProductModalProps {
     complexity: ComplexityLevel | undefined,
     currentAttachRate: number | undefined,
     backbookMultiplier: number | undefined,
-    marketRelevance: RegionKey[] | undefined,
-    competitors: CompetitorsByRegion | undefined
+    marketRelevance: RegionKey[] | undefined
   ) => void;
 }
 
@@ -42,12 +40,6 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   const [currentAttachRate, setCurrentAttachRate] = useState<number | undefined>(undefined);
   const [backbookMultiplier, setBackbookMultiplier] = useState<number | undefined>(undefined);
   const [marketRelevance, setMarketRelevance] = useState<RegionKey[]>([]);
-  const [competitors, setCompetitors] = useState<CompetitorsByRegion>({
-    uk: [],
-    germany: [],
-    france: [],
-    belgium: [],
-  });
 
   useEffect(() => {
     if (product) {
@@ -67,41 +59,26 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setBackbookMultiplier(product.backbookMultiplier);
       // Initialize market relevance from product (empty array = all countries)
       setMarketRelevance(product.marketRelevance || []);
-      
-      // Initialize competitors from product or from default data
-      if (product.competitors) {
-        setCompetitors(product.competitors);
-      } else {
-        // Try to get from default data
-        let defaultCompetitors = PRODUCT_COMPETITORS[product.name];
-        if (!defaultCompetitors) {
-          const productNameLower = product.name.toLowerCase();
-          const matchingKey = Object.keys(PRODUCT_COMPETITORS).find(
-            (key) => key.toLowerCase() === productNameLower || 
-                     productNameLower.includes(key.toLowerCase()) ||
-                     key.toLowerCase().includes(productNameLower)
-          );
-          if (matchingKey) {
-            defaultCompetitors = PRODUCT_COMPETITORS[matchingKey];
-          }
-        }
-        setCompetitors(defaultCompetitors || { uk: [], germany: [], france: [], belgium: [] });
-      }
     }
   }, [product]);
 
   if (!isOpen || !product) return null;
 
+  // Map region to country code
+  const countryCodes: Record<RegionKey, string> = {
+    belgium: 'BE',
+    canada: 'CA',
+    switzerland: 'CH',
+    germany: 'DE',
+    france: 'FR',
+    luxembourg: 'LU',
+    malta: 'MT',
+    netherlands: 'NL',
+    uk: 'GB',
+    us: 'US',
+  };
+
   const handleSave = () => {
-    // Clean up competitors - remove empty arrays
-    const cleanedCompetitors: CompetitorsByRegion = {};
-    if (competitors.uk && competitors.uk.length > 0) cleanedCompetitors.uk = competitors.uk;
-    if (competitors.germany && competitors.germany.length > 0) cleanedCompetitors.germany = competitors.germany;
-    if (competitors.france && competitors.france.length > 0) cleanedCompetitors.france = competitors.france;
-    if (competitors.belgium && competitors.belgium.length > 0) cleanedCompetitors.belgium = competitors.belgium;
-    
-    const finalCompetitors = Object.keys(cleanedCompetitors).length > 0 ? cleanedCompetitors : undefined;
-    
     onSave(
       product.id,
       name.trim(),
@@ -110,21 +87,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       complexity,
       currentAttachRate,
       backbookMultiplier,
-      marketRelevance.length > 0 ? marketRelevance : undefined,
-      finalCompetitors
+      marketRelevance.length > 0 ? marketRelevance : undefined
     );
     onClose();
-  };
-
-  const updateCompetitors = (region: 'uk' | 'germany' | 'france' | 'belgium', value: string) => {
-    setCompetitors((prev) => ({
-      ...prev,
-      [region]: value.split(';').map((s) => s.trim()).filter((s) => s.length > 0),
-    }));
-  };
-
-  const getCompetitorsValue = (region: 'uk' | 'germany' | 'france' | 'belgium'): string => {
-    return (competitors[region] || []).join('; ');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -279,181 +244,217 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           </div>
 
           {/* Market Dynamics Section */}
-          <div style={{ marginBottom: '24px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <label
               style={{
                 display: 'block',
-                fontSize: '14px',
-                fontWeight: '500',
+                fontSize: '13px',
+                fontWeight: '600',
                 color: '#374151',
-                marginBottom: '12px',
+                marginBottom: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
               }}
             >
               Market Dynamics
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-              {/* Complexity */}
-              <div>
-                <label
-                  htmlFor="complexity-select"
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: '#6b7280',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Complexity
-                </label>
-                <select
-                  id="complexity-select"
-                  value={complexity || ''}
-                  onChange={(e) => setComplexity((e.target.value as ComplexityLevel) || undefined)}
-                  aria-label="Complexity level"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    color: '#111827',
-                    backgroundColor: 'white',
-                    cursor: 'pointer',
-                    boxSizing: 'border-box',
-                    height: '36px',
-                  }}
-                >
-                  <option value="">Select...</option>
-                  <option value="Low">Low (0.7x)</option>
-                  <option value="Medium">Medium (0.5x)</option>
-                  <option value="High">High (0.3x)</option>
-                  <option value="Mandatory">Mandatory (1.0x)</option>
-                </select>
-              </div>
+            <div style={{ 
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              padding: '10px',
+              backgroundColor: '#f9fafb',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', alignItems: 'start' }}>
+                {/* Complexity */}
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label
+                    htmlFor="complexity-select"
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      marginBottom: '4px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px',
+                      minHeight: '18px',
+                      lineHeight: '18px',
+                    }}
+                  >
+                    Complexity
+                  </label>
+                  <select
+                    id="complexity-select"
+                    value={complexity || ''}
+                    onChange={(e) => setComplexity((e.target.value as ComplexityLevel) || undefined)}
+                    aria-label="Complexity level"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#111827',
+                      backgroundColor: 'white',
+                      cursor: 'pointer',
+                      boxSizing: 'border-box',
+                      height: '36px',
+                    }}
+                  >
+                    <option value="">Select...</option>
+                    <option value="Low">Low (0.7x)</option>
+                    <option value="Medium">Medium (0.5x)</option>
+                    <option value="High">High (0.3x)</option>
+                    <option value="Mandatory">Mandatory (1.0x)</option>
+                  </select>
+                </div>
 
-              {/* Current Attach Rate (Optional Anchor) */}
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: '#6b7280',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Current Attach Rate % (Optional Anchor)
-                </label>
-                <PercentInput
-                  value={currentAttachRate ?? 0}
-                  onChange={(v) => setCurrentAttachRate(v === 0 ? undefined : v)}
-                  style={{ width: '100%' }}
-                  placeholder="0"
-                  aria-label="Current Attach Rate percentage"
-                />
-              </div>
+                {/* Current Attach Rate */}
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label
+                    htmlFor="attach-rate-input"
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      marginBottom: '4px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px',
+                      minHeight: '18px',
+                      lineHeight: '18px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Current Attach %
+                  </label>
+                  <PercentInput
+                    id="attach-rate-input"
+                    value={currentAttachRate ?? 0}
+                    onChange={(v) => setCurrentAttachRate(v === 0 ? undefined : v)}
+                    style={{ width: '100%', height: '36px' }}
+                    placeholder="0"
+                    aria-label="Current Attach Rate percentage"
+                  />
+                </div>
 
-              {/* Backbook Multiplier */}
-              <div>
-                <label
-                  htmlFor="backbook-multiplier-input"
-                  style={{
-                    display: 'block',
-                    fontSize: '12px',
-                    fontWeight: '500',
-                    color: '#6b7280',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Backbook Multiplier (0-1)
-                </label>
-                <input
-                  id="backbook-multiplier-input"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  value={backbookMultiplier ?? ''}
-                  onChange={(e) => setBackbookMultiplier(e.target.value === '' ? undefined : parseFloat(e.target.value))}
-                  placeholder="Default: 1.0"
-                  aria-label="Backbook Multiplier (0-1)"
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    color: '#111827',
-                    backgroundColor: 'white',
-                    boxSizing: 'border-box',
-                    height: '36px',
-                  }}
-                />
-                {product && backbookMultiplier === undefined && (
-                  <div style={{ fontSize: '10px', color: '#9ca3af', marginTop: '4px' }}>
-                    Default: 1.0 (no backbook friction)
-                  </div>
-                )}
+                {/* Backbook Multiplier */}
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label
+                    htmlFor="backbook-multiplier-input"
+                    style={{
+                      display: 'block',
+                      fontSize: '11px',
+                      fontWeight: '600',
+                      color: '#6b7280',
+                      marginBottom: '4px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.3px',
+                      minHeight: '18px',
+                      lineHeight: '18px',
+                    }}
+                  >
+                    Backbook Mult.
+                  </label>
+                  <input
+                    id="backbook-multiplier-input"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={backbookMultiplier ?? ''}
+                    onChange={(e) => setBackbookMultiplier(e.target.value === '' ? undefined : parseFloat(e.target.value))}
+                    placeholder="1.0"
+                    aria-label="Backbook Multiplier (0-1)"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#111827',
+                      backgroundColor: 'white',
+                      boxSizing: 'border-box',
+                      height: '36px',
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
 
           {/* Restaurant Segment Fit Section */}
-          <div style={{ marginBottom: '24px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <label
               style={{
                 display: 'block',
-                fontSize: '14px',
-                fontWeight: '500',
+                fontSize: '13px',
+                fontWeight: '600',
                 color: '#374151',
-                marginBottom: '12px',
+                marginBottom: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
               }}
             >
-              Restaurant Segment Fit
+              Segment Fit
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
-              {SEGMENT_KEYS.map((segment) => (
-                <div key={segment}>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontSize: '12px',
-                      fontWeight: '500',
-                      color: '#6b7280',
-                      marginBottom: '6px',
-                    }}
-                    htmlFor={`segment-fit-${segment}`}
-                  >
-                    {SEGMENT_LABELS[segment]} %
-                  </label>
-                  <PercentInput
-                    id={`segment-fit-${segment}`}
-                    value={fitBySegment[segment]}
-                    onChange={(v) => {
-                      setFitBySegment({
-                        ...fitBySegment,
-                        [segment]: v,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                    placeholder="0"
-                    aria-label={`${SEGMENT_LABELS[segment]} percentage`}
-                  />
-                </div>
-              ))}
+            <div style={{ 
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              padding: '10px',
+              backgroundColor: '#f9fafb',
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', alignItems: 'start' }}>
+                {SEGMENT_KEYS.map((segment) => (
+                  <div key={segment} style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        color: '#6b7280',
+                        marginBottom: '4px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.3px',
+                        minHeight: '32px',
+                        lineHeight: '16px',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        flexWrap: 'wrap',
+                      }}
+                      htmlFor={`segment-fit-${segment}`}
+                    >
+                      {SEGMENT_LABELS[segment]} %
+                    </label>
+                    <PercentInput
+                      id={`segment-fit-${segment}`}
+                      value={fitBySegment[segment]}
+                      onChange={(v) => {
+                        setFitBySegment({
+                          ...fitBySegment,
+                          [segment]: v,
+                        });
+                      }}
+                      style={{ width: '100%', height: '36px' }}
+                      placeholder="0"
+                      aria-label={`${SEGMENT_LABELS[segment]} percentage`}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
           {/* Market Relevance Section */}
-          <div style={{ marginBottom: '24px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <label
               style={{
                 display: 'block',
-                fontSize: '14px',
-                fontWeight: '500',
+                fontSize: '13px',
+                fontWeight: '600',
                 color: '#374151',
-                marginBottom: '12px',
+                marginBottom: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
               }}
             >
               Market Relevance
@@ -461,16 +462,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             <div style={{ 
               border: '1px solid #e5e7eb',
               borderRadius: '6px',
-              padding: '12px',
+              padding: '8px 10px',
               backgroundColor: '#f9fafb',
             }}>
-              <div style={{ marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 <label
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     cursor: 'pointer',
-                    padding: '6px 8px',
+                    padding: '4px 8px',
                     borderRadius: '4px',
                     transition: 'background-color 0.2s',
                   }}
@@ -492,144 +493,59 @@ export const ProductModal: React.FC<ProductModalProps> = ({
                       }
                     }}
                     style={{
-                      marginRight: '8px',
-                      width: '16px',
-                      height: '16px',
+                      marginRight: '6px',
+                      width: '14px',
+                      height: '14px',
                       cursor: 'pointer',
                     }}
                   />
-                  <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151' }}>
-                    All
+                  <span style={{ fontSize: '11px', fontWeight: '700', color: '#374151', letterSpacing: '0.3px' }}>
+                    ALL
                   </span>
                 </label>
-              </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', 
-                gap: '8px' 
-              }}>
                 {REGION_KEYS.map((region) => (
-                  <label
-                    key={region}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      padding: '6px 8px',
-                      borderRadius: '4px',
-                      transition: 'background-color 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = '#f3f4f6';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={marketRelevance.includes(region)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setMarketRelevance([...marketRelevance, region]);
-                        } else {
-                          setMarketRelevance(marketRelevance.filter(r => r !== region));
-                        }
-                      }}
+                    <label
+                      key={region}
                       style={{
-                        marginRight: '8px',
-                        width: '16px',
-                        height: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
                         cursor: 'pointer',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        transition: 'background-color 0.2s',
                       }}
-                    />
-                    <span style={{ fontSize: '13px', color: '#374151' }}>
-                      {REGION_LABELS[region]}
-                    </span>
-                  </label>
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={marketRelevance.includes(region)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setMarketRelevance([...marketRelevance, region]);
+                          } else {
+                            setMarketRelevance(marketRelevance.filter(r => r !== region));
+                          }
+                        }}
+                        style={{
+                          marginRight: '6px',
+                          width: '14px',
+                          height: '14px',
+                          cursor: 'pointer',
+                        }}
+                      />
+                      <span style={{ fontSize: '11px', fontWeight: '600', color: '#374151', letterSpacing: '0.3px', fontFamily: 'monospace' }}>
+                        {countryCodes[region]}
+                      </span>
+                    </label>
                 ))}
               </div>
             </div>
           </div>
-
-          {/* Competitors Section */}
-          {(() => {
-            const regionLabels: Record<string, string> = {
-              uk: 'UK',
-              germany: 'Germany',
-              france: 'France',
-              belgium: 'Belgium',
-            };
-
-            const regions: Array<'uk' | 'germany' | 'france' | 'belgium'> = ['uk', 'germany', 'france', 'belgium'];
-
-            return (
-              <div style={{ marginBottom: '24px' }}>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    color: '#374151',
-                    marginBottom: '8px',
-                  }}
-                >
-                  Key Competitors
-                </label>
-                <div
-                  style={{
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '6px',
-                    backgroundColor: '#f9fafb',
-                    padding: '12px',
-                  }}
-                >
-                  {regions.map((region) => (
-                    <div
-                      key={region}
-                      style={{
-                        marginBottom: region !== 'belgium' ? '12px' : '0',
-                        paddingBottom: region !== 'belgium' ? '12px' : '0',
-                        borderBottom: region !== 'belgium' ? '1px solid #e5e7eb' : 'none',
-                      }}
-                    >
-                      <label
-                        style={{
-                          display: 'block',
-                          fontSize: '12px',
-                          fontWeight: '600',
-                          color: '#6b7280',
-                          marginBottom: '6px',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                        }}
-                        htmlFor={`competitors-${region}`}
-                      >
-                        {regionLabels[region]}
-                      </label>
-                      <input
-                        id={`competitors-${region}`}
-                        type="text"
-                        value={getCompetitorsValue(region)}
-                        onChange={(e) => updateCompetitors(region, e.target.value)}
-                        placeholder="Enter competitors separated by semicolons..."
-                        style={{
-                          width: '100%',
-                          padding: '8px 10px',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '4px',
-                          fontSize: '13px',
-                          color: '#374151',
-                          backgroundColor: 'white',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
 
           {/* Notes Field */}
           <div style={{ marginBottom: '24px' }}>

@@ -68,11 +68,19 @@ export const PercentInput = forwardRef<HTMLInputElement, PercentInputProps>(
           setIsFocused(false);
           handleBlur(e);
         }}
-        className={`h-9 rounded-md border border-gray-300 bg-white px-2 text-right font-mono tabular-nums focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none resize-none percent-input-fixed ${className}`}
+        className={`percent-input-fixed ${className}`}
         style={{ 
-          boxSizing: 'border-box',
+          width: '100%',
+          padding: '8px 10px',
+          border: '1px solid #e5e7eb',
+          borderRadius: '6px',
+          fontSize: '13px',
+          color: '#111827',
           backgroundColor: disabled ? '#f3f4f6' : 'white',
           cursor: disabled ? 'not-allowed' : 'text',
+          boxSizing: 'border-box',
+          textAlign: 'right',
+          fontFamily: 'monospace',
           ...style 
         }}
         disabled={disabled}
