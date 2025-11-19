@@ -30,7 +30,13 @@ function App() {
     savedVersions,
     loadVersion,
     deleteVersion,
+    loadSavedVersions,
   } = useStore();
+
+  // Load saved versions on mount
+  useEffect(() => {
+    loadSavedVersions();
+  }, [loadSavedVersions]);
 
   // Defensive check - if mix is invalid, reset to defaults (only once on mount)
   useEffect(() => {

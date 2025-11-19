@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { AppState, Product, SegmentKey, RegionMix, RegionKey, SegmentMix } from "./types";
 import { DEFAULT_CURRENT_MIX, DEFAULT_NEW_MIX, DEFAULT_PRODUCTS, REGION_KEYS } from "./types";
+import { versionsApi } from "./utils/supabase";
 
 export type SavedVersion = {
   id: string;
@@ -36,9 +37,11 @@ interface Store extends AppState {
   importState: (state: AppState) => void;
   // Version management
   savedVersions: SavedVersion[];
-  saveVersion: (name: string, id?: string) => void;
-  loadVersion: (id: string) => void;
-  deleteVersion: (id: string) => void;
+  isLoadingVersions: boolean;
+  loadSavedVersions: () => Promise<void>;
+  saveVersion: (name: string, id?: string) => Promise<void>;
+  loadVersion: (id: string) => Promise<void>;
+  deleteVersion: (id: string) => Promise<void>;
   checkForUnsavedChanges: () => void;
 }
 
@@ -157,64 +160,8 @@ const migrateToRegionMix = (oldState: any): AppState | null => {
   }
 };
 
-// Helper to load/save versions from localStorage
-const VERSIONS_STORAGE_KEY = "product-penetration-versions";
-
-const loadVersions = (): SavedVersion[] => {
-  try {
-    const stored = localStorage.getItem(VERSIONS_STORAGE_KEY);
-    if (!stored) return [];
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return [];
-    
-    // Validate and ensure all saved versions have complete product data
-    return parsed.map((v: any) => {
-      if (!v.state || !v.state.products) return v;
-      
-      // Ensure products have all required fields (category, name, notes, fitBySegment, market dynamics, competitors)
-      const validatedProducts = v.state.products.map((p: any) => ({
-        id: p.id || generateId(),
-        category: p.category || '',
-        name: p.name || '',
-        notes: p.notes || '',
-        fitBySegment: p.fitBySegment || {
-          casual: 0,
-          upscaleCasual: 0,
-          fineDining: 0,
-          bar: 0,
-          quickServe: 0,
-        },
-        // Handle migration from old field names
-        percentWhoWantIt: p.percentWhoWantIt ?? p.percentWhoWillPay,
-        percentWhoCanUseIt: p.percentWhoCanUseIt ?? p.percentWhoWillUse,
-        complexity: p.complexity,
-        currentAttachRate: p.currentAttachRate,
-        backbookMultiplier: p.backbookMultiplier,
-        marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
-        competitors: p.competitors || undefined,
-      }));
-      
-      return {
-        ...v,
-        state: {
-          ...v.state,
-          products: validatedProducts,
-        },
-      };
-    });
-  } catch (error) {
-    console.error('Error loading versions:', error);
-    return [];
-  }
-};
-
-const saveVersions = (versions: SavedVersion[]) => {
-  try {
-    localStorage.setItem(VERSIONS_STORAGE_KEY, JSON.stringify(versions));
-  } catch (error) {
-    console.error('Error saving versions:', error);
-  }
-};
+// Note: Version storage is now handled by Supabase API in utils/supabase.ts
+// with localStorage as fallback
 
 // Helper function to compare numeric values between current state and saved version
 // Only compares numeric fields: mixes, fitBySegment, currentAttachRate, backbookMultiplier
@@ -309,7 +256,8 @@ export const useStore = create<Store>()(
       currentMix: DEFAULT_CURRENT_MIX,
       newMix: DEFAULT_NEW_MIX,
       products: createInitialProducts(),
-      savedVersions: loadVersions(),
+      savedVersions: [],
+      isLoadingVersions: false,
       currentMixLocked: false,
       newMixLocked: false,
       countryTotals: {} as Record<RegionKey, number>,
@@ -335,8 +283,7 @@ export const useStore = create<Store>()(
           };
           // Check for unsaved changes after update
           if (state.activeVersionId) {
-            const versions = loadVersions();
-            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
             const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
             return { ...newState, hasUnsavedChanges: hasChanges };
           }
@@ -356,8 +303,7 @@ export const useStore = create<Store>()(
           };
           // Check for unsaved changes after update
           if (state.activeVersionId) {
-            const versions = loadVersions();
-            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
             const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
             return { ...newState, hasUnsavedChanges: hasChanges };
           }
@@ -389,8 +335,7 @@ export const useStore = create<Store>()(
           };
           // Check for unsaved changes after adding product
           if (state.activeVersionId) {
-            const versions = loadVersions();
-            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
             const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
             return { ...newState, hasUnsavedChanges: hasChanges };
           }
@@ -409,8 +354,7 @@ export const useStore = create<Store>()(
             updates.currentAttachRate !== undefined ||
             updates.backbookMultiplier !== undefined
           )) {
-            const versions = loadVersions();
-            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
             const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
             return { ...newState, hasUnsavedChanges: hasChanges };
           }
@@ -423,8 +367,7 @@ export const useStore = create<Store>()(
           };
           // Check for unsaved changes after deleting product
           if (state.activeVersionId) {
-            const versions = loadVersions();
-            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
             const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
             return { ...newState, hasUnsavedChanges: hasChanges };
           }
@@ -442,8 +385,7 @@ export const useStore = create<Store>()(
           };
           // Check for unsaved changes after duplicating product
           if (state.activeVersionId) {
-            const versions = loadVersions();
-            const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+            const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
             const hasChanges = hasNumericChanges({ ...state, ...newState } as Store, activeVersion || null);
             return { ...newState, hasUnsavedChanges: hasChanges };
           }
@@ -504,56 +446,101 @@ export const useStore = create<Store>()(
         }),
       importState: (state: AppState) => set(state),
       
-      saveVersion: (name: string, id?: string) => {
-        set((state: Store) => {
-          // Deep clone products to ensure all properties (category, name, notes, fitBySegment, market dynamics, competitors) are preserved
-          const productsToSave = state.products.map((p: Product) => ({
-            id: p.id,
-            category: p.category,
-            name: p.name,
-            notes: p.notes || '',
-            fitBySegment: { ...p.fitBySegment },
-            percentWhoWantIt: p.percentWhoWantIt,
-            percentWhoCanUseIt: p.percentWhoCanUseIt,
-            complexity: p.complexity,
-            currentAttachRate: p.currentAttachRate,
-            backbookMultiplier: p.backbookMultiplier,
-            marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
-            competitors: p.competitors ? { ...p.competitors } : undefined,
-          }));
-          
-          const versionToSave: SavedVersion = {
-            id: id || generateId(),
-            name,
-            timestamp: Date.now(),
-            state: {
-              currentMix: { ...state.currentMix },
-              newMix: { ...state.newMix },
-              products: productsToSave,
-            },
-          };
-          
-          let updatedVersions: SavedVersion[];
-          if (id) {
-            // Update existing version
-            updatedVersions = state.savedVersions.map(v => 
-              v.id === id ? versionToSave : v
-            );
-          } else {
-            // Create new version
-            updatedVersions = [...state.savedVersions, versionToSave];
-          }
-          
-          saveVersions(updatedVersions);
-          return { 
-            savedVersions: updatedVersions,
-            hasUnsavedChanges: false, // Clear unsaved changes flag when saving
-          };
-        });
+      loadSavedVersions: async () => {
+        set({ isLoadingVersions: true });
+        try {
+          console.log('🔄 Loading saved versions from Supabase...');
+          const versions = await versionsApi.getAll();
+          console.log(`✅ Loaded ${versions.length} versions from Supabase`);
+          // Validate and ensure all saved versions have complete product data
+          const validatedVersions = versions.map((v: any) => {
+            if (!v.state || !v.state.products) return v;
+            
+            const validatedProducts = v.state.products.map((p: any) => ({
+              id: p.id || generateId(),
+              category: p.category || '',
+              name: p.name || '',
+              notes: p.notes || '',
+              fitBySegment: p.fitBySegment || {
+                casual: 0,
+                upscaleCasual: 0,
+                fineDining: 0,
+                bar: 0,
+                quickServe: 0,
+              },
+              percentWhoWantIt: p.percentWhoWantIt ?? (p as any).percentWhoWillPay,
+              percentWhoCanUseIt: p.percentWhoCanUseIt ?? (p as any).percentWhoWillUse,
+              complexity: p.complexity,
+              currentAttachRate: p.currentAttachRate,
+              backbookMultiplier: p.backbookMultiplier,
+              marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
+              competitors: p.competitors || undefined,
+            }));
+            
+            return {
+              ...v,
+              state: {
+                ...v.state,
+                products: validatedProducts,
+              },
+            };
+          });
+          set({ savedVersions: validatedVersions, isLoadingVersions: false });
+        } catch (error) {
+          console.error('Error loading versions:', error);
+          set({ isLoadingVersions: false });
+        }
       },
       
-      loadVersion: (id: string) => {
-        const versions = loadVersions();
+      saveVersion: async (name: string, id?: string) => {
+        const state = useStore.getState();
+        // Deep clone products to ensure all properties are preserved
+        const productsToSave = state.products.map((p: Product) => ({
+          id: p.id,
+          category: p.category,
+          name: p.name,
+          notes: p.notes || '',
+          fitBySegment: { ...p.fitBySegment },
+          percentWhoWantIt: p.percentWhoWantIt,
+          percentWhoCanUseIt: p.percentWhoCanUseIt,
+          complexity: p.complexity,
+          currentAttachRate: p.currentAttachRate,
+          backbookMultiplier: p.backbookMultiplier,
+          marketRelevance: p.marketRelevance ? [...p.marketRelevance] : undefined,
+          competitors: p.competitors ? { ...p.competitors } : undefined,
+        }));
+        
+        const versionToSave: SavedVersion = {
+          id: id || generateId(),
+          name,
+          timestamp: Date.now(),
+          state: {
+            currentMix: { ...state.currentMix },
+            newMix: { ...state.newMix },
+            products: productsToSave,
+          },
+        };
+        
+        try {
+          console.log(`💾 Saving version "${name}" to Supabase...`);
+          await versionsApi.save(versionToSave);
+          console.log(`✅ Version "${name}" saved successfully`);
+          // Reload versions to get the updated list
+          await useStore.getState().loadSavedVersions();
+          set({ hasUnsavedChanges: false });
+        } catch (error) {
+          console.error('❌ Error saving version:', error);
+          // Update local state even if API call fails
+          const currentVersions = useStore.getState().savedVersions;
+          const updatedVersions = id
+            ? currentVersions.map(v => v.id === id ? versionToSave : v)
+            : [...currentVersions, versionToSave];
+          set({ savedVersions: updatedVersions, hasUnsavedChanges: false });
+        }
+      },
+      
+      loadVersion: async (id: string) => {
+        const versions = useStore.getState().savedVersions;
         const version = versions.find((v: SavedVersion) => v.id === id);
         if (version && version.state) {
           // Ensure products are fully loaded with all properties
@@ -583,21 +570,35 @@ export const useStore = create<Store>()(
             currentMix: version.state.currentMix || DEFAULT_CURRENT_MIX,
             newMix: version.state.newMix || DEFAULT_NEW_MIX,
             products: productsToLoad,
-            savedVersions: versions, // Keep versions in sync
             activeVersionId: id, // Set active version ID
             hasUnsavedChanges: false, // Clear unsaved changes flag when loading
           });
         }
       },
       
-      deleteVersion: (id: string) => {
-        set((state: Store) => {
-          const updatedVersions = state.savedVersions.filter((v: SavedVersion) => v.id !== id);
-          saveVersions(updatedVersions);
+      deleteVersion: async (id: string) => {
+        try {
+          console.log(`🗑️ Deleting version "${id}" from Supabase...`);
+          await versionsApi.delete(id);
+          console.log(`✅ Version deleted successfully`);
+          // Reload versions to get the updated list
+          await useStore.getState().loadSavedVersions();
+          const state = useStore.getState();
           // Clear active version if it was deleted
-          const clearActive = state.activeVersionId === id ? { activeVersionId: null, hasUnsavedChanges: false } : {};
-          return { savedVersions: updatedVersions, ...clearActive };
-        });
+          if (state.activeVersionId === id) {
+            set({ activeVersionId: null, hasUnsavedChanges: false });
+          }
+        } catch (error) {
+          console.error('Error deleting version:', error);
+          // Update local state even if API call fails
+          const currentVersions = useStore.getState().savedVersions;
+          const updatedVersions = currentVersions.filter((v: SavedVersion) => v.id !== id);
+          set({ savedVersions: updatedVersions });
+          const state = useStore.getState();
+          if (state.activeVersionId === id) {
+            set({ activeVersionId: null, hasUnsavedChanges: false });
+          }
+        }
       },
       
       checkForUnsavedChanges: () => {
@@ -605,8 +606,7 @@ export const useStore = create<Store>()(
           if (!state.activeVersionId) {
             return { hasUnsavedChanges: false };
           }
-          const versions = loadVersions();
-          const activeVersion = versions.find((v: SavedVersion) => v.id === state.activeVersionId);
+          const activeVersion = state.savedVersions.find((v: SavedVersion) => v.id === state.activeVersionId);
           const hasChanges = hasNumericChanges(state, activeVersion || null);
           return { hasUnsavedChanges: hasChanges };
         });

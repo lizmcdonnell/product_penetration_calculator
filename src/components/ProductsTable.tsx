@@ -29,10 +29,10 @@ interface ProductsTableProps {
   onDeleteProduct: (id: string) => void;
   onReorderProducts: (activeId: string, overId: string) => void;
   onAddProduct: () => void;
-  onSaveVersion: (name: string, id?: string) => void;
+  onSaveVersion: (name: string, id?: string) => Promise<void>;
   savedVersions: Array<{ id: string; name: string; timestamp: number }>;
-  onLoadVersion: (id: string) => void;
-  onDeleteVersion: (id: string) => void;
+  onLoadVersion: (id: string) => Promise<void>;
+  onDeleteVersion: (id: string) => Promise<void>;
   activeVersionId: string | null;
   hasUnsavedChanges: boolean;
 }
@@ -423,9 +423,9 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
     setSelectedVersionId(null);
   };
 
-  const handleSaveConfirm = () => {
+  const handleSaveConfirm = async () => {
     if (versionName.trim()) {
-      onSaveVersion(versionName.trim(), selectedVersionId || undefined);
+      await onSaveVersion(versionName.trim(), selectedVersionId || undefined);
       setShowSavePrompt(false);
       setVersionName("");
       setSelectedVersionId(null);
@@ -1198,7 +1198,7 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
                   }}
                 >
                   <button
-                    onClick={() => onLoadVersion(version.id)}
+                    onClick={async () => await onLoadVersion(version.id)}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1229,10 +1229,10 @@ export const ProductsTable: React.FC<ProductsTableProps> = ({
                     {version.name}
                   </button>
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
                     if (confirm(`Delete version "${version.name}"?`)) {
-                      onDeleteVersion(version.id);
+                      await onDeleteVersion(version.id);
                     }
                   }}
                   style={{
